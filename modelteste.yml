@@ -1,0 +1,62 @@
+#==============================================================================
+#  EXEMPLO - REDE DE FILAS COMPLEXA
+#  Use '#' para comentários
+#==============================================================================
+#
+#  COMO EDITAR ESTE ARQUIVO
+#  
+#  Para simular com números pseudo-aleatórios gerados automaticamente, use:
+#    rndnumbersPerSeed: <valor> (usado apenas se 'seeds' estiver declarado)
+#    seeds: (lista de seeds para gerar números pseudo-aleatórios)
+#    - 1
+#    - 2
+#  
+#  Para simular com lista de números pseudo-aleatórios fornecida, use:
+#    rndnumbers: (lista de números pseudo-aleatórios)
+#    - 0.2176
+#    - 0.0103
+#  
+#  IMPORTANTE:
+#    * Se 'seeds' for usado, 'rndnumbers' é ignorado
+#  
+#  NÃO DELETE A PRÓXIMA LINHA INICIADA POR '!'
+!PARAMETERS
+
+arrivals: 
+   Q1: 2.0
+queues: 
+   Q1: 
+      servers: 1
+      capacity: -1    
+      minArrival: 2.0
+      maxArrival: 4.0
+      minService: 1.0
+      maxService: 2.0
+   Q2: 
+      servers: 2
+      capacity: 5
+      minService: 4.0
+      maxService: 6.0
+   Q3: 
+      servers: 2
+      capacity: 10
+      minService: 5.0
+      maxService: 15.0
+
+
+network: 
+-  source: Q1
+   target: Q2
+   probability: 0.8
+-  source: Q1
+   target: Q3
+   probability: 0.2
+-  source: Q2
+   target: Q3
+   probability: 0.5
+-  source: Q3
+   target: Q3
+   probability: 0.3
+rndnumbersPerSeed: 100000
+seeds: 
+- 42

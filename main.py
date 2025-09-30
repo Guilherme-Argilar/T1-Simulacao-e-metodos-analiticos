@@ -1,38 +1,51 @@
 """
-Simulador de Filas em Tandem (2 filas em série)
-Etapa 2 - Versão Simples e Extensível
+Simulador de Filas em Tandem - Versão com suporte a YAML estruturado
+Compatível com formato do simulador do módulo 3
 """
 
 import random
 import heapq
+import yaml
+import sys
 from collections import defaultdict
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Any
+
 
 class Fila:
     """Classe para representar uma fila individual"""
-    def __init__(self, id_fila: int, num_servidores: int, capacidade: int,
-                 tempo_chegada_min: float = None, tempo_chegada_max: float = None,
-                 tempo_atendimento_min: float = None, tempo_atendimento_max: float = None):
-        self.id = id_fila
-        self.num_servidores = num_servidores
-        self.capacidade = capacidade
-        self.tempo_chegada_min = tempo_chegada_min
-        self.tempo_chegada_max = tempo_chegada_max
-        self.tempo_atendimento_min = tempo_atendimento_min
-        self.tempo_atendimento_max = tempo_atendimento_max
+    def __init__(self, nome: str, servidores: int, capacidade: Optional[int],
+                 min_chegada: Optional[float], max_chegada: Optional[float],
+                 min_servico: float, max_servico: float):
+        self.nome = nome
+        self.num_servidores = servidores
+        # Corrigido: -1 ou None significa capacidade infinita
+        if capacidade is None or capacidade < 0:
+            self.capacidade = float('inf')
+        else:
+            self.capacidade = capacidade
+        self.min_chegada = min_chegada
+        self.max_chegada = max_chegada
+        self.min_servico = min_servico
+        self.max_servico = max_servico
         
         # Estado atual
         self.clientes_no_sistema = 0
-        self.servidores_ocupados = []  # Lista com tempos de fim de atendimento
+        self.servidores_ocupados = []
         
         # Estatísticas
+        self.clientes_recebidos = 0
         self.clientes_atendidos = 0
         self.clientes_perdidos = 0
         self.tempo_por_estado = defaultdict(float)
         self.ultimo_tempo_atualizacao = 0.0
         
+        # Roteamento
+        self.destinos = {}  # {nome_destino: probabilidade}
+    
     def tem_espaco(self) -> bool:
         """Verifica se há espaço na fila"""
+        if self.capacidade == float('inf'):
+            return True
         return self.clientes_no_sistema < self.capacidade
     
     def tem_servidor_livre(self) -> bool:
@@ -46,292 +59,395 @@ class Fila:
         self.ultimo_tempo_atualizacao = tempo_atual
 
 
-class SimuladorFilasTandem:
-    """Simulador para filas em tandem (série)"""
+class SimuladorFilas:
+    """Simulador para redes de filas baseado em arquivo YAML"""
     
-    def __init__(self, seed: int = None):
-        if seed:
-            random.seed(seed)
-        
-        self.filas: Dict[int, Fila] = {}
+    def __init__(self, arquivo_yaml: str):
+        self.filas: Dict[str, Fila] = {}
         self.tempo_atual = 0.0
         self.contador_aleatorios = 0
-        self.eventos = []  # Heap de eventos
+        self.eventos = []
+        self.chegadas_iniciais = {}
+        self.numeros_aleatorios = []
+        self.indice_aleatorio = 0
+        self.usar_lista_aleatorios = False
         
-        # Matriz de roteamento (origem -> destino -> probabilidade)
-        self.roteamento = {}
+        self.carregar_configuracao(arquivo_yaml)
+    
+    def carregar_configuracao(self, arquivo: str):
+        """Carrega configuração do arquivo YAML"""
+        with open(arquivo, 'r', encoding='utf-8') as f:
+            # Ler arquivo completo e processar
+            conteudo = f.read()
+            # Encontrar onde começam os parâmetros
+            inicio_params = conteudo.find('!PARAMETERS')
+            if inicio_params != -1:
+                conteudo = conteudo[inicio_params + len('!PARAMETERS'):]
+            
+            config = yaml.safe_load(conteudo)
         
-    def adicionar_fila(self, fila: Fila):
-        """Adiciona uma fila ao sistema"""
-        self.filas[fila.id] = fila
+        # Processar chegadas iniciais
+        if 'arrivals' in config:
+            self.chegadas_iniciais = config['arrivals']
         
-    def definir_roteamento(self, origem: int, destino: int, probabilidade: float = 1.0):
-        """Define roteamento entre filas (preparado para redes genéricas)"""
-        if origem not in self.roteamento:
-            self.roteamento[origem] = {}
-        self.roteamento[origem][destino] = probabilidade
+        # Criar filas
+        if 'queues' in config:
+            for nome_fila, params in config['queues'].items():
+                fila = Fila(
+                    nome=nome_fila,
+                    servidores=params['servers'],
+                    capacidade=params.get('capacity'),
+                    min_chegada=params.get('minArrival'),
+                    max_chegada=params.get('maxArrival'),
+                    min_servico=params['minService'],
+                    max_servico=params['maxService']
+                )
+                self.filas[nome_fila] = fila
         
+        # Configurar rede (roteamento)
+        if 'network' in config:
+            for conexao in config['network']:
+                origem = conexao['source']
+                destino = conexao['target']
+                probabilidade = conexao['probability']
+                
+                if origem in self.filas:
+                    self.filas[origem].destinos[destino] = probabilidade
+        
+        # Processar números aleatórios ou seeds
+        if 'seeds' in config and 'rndnumbersPerSeed' in config:
+            # Usar seeds para gerar números aleatórios
+            self.gerar_aleatorios_por_seeds(
+                config['seeds'], 
+                config['rndnumbersPerSeed']
+            )
+        elif 'rndnumbers' in config:
+            # Usar lista de números aleatórios fornecida
+            self.numeros_aleatorios = config['rndnumbers']
+            self.usar_lista_aleatorios = True
+    
+    def gerar_aleatorios_por_seeds(self, seeds: List[int], quantidade: int):
+        """Gera números aleatórios baseado em seeds"""
+        # Para este simulador, vamos usar apenas a primeira seed
+        # Em uma versão mais completa, poderia fazer múltiplas execuções
+        if seeds:
+            random.seed(seeds[0])
+    
+    def obter_aleatorio(self) -> float:
+        """Obtém próximo número aleatório"""
+        self.contador_aleatorios += 1
+        
+        if self.usar_lista_aleatorios and self.indice_aleatorio < len(self.numeros_aleatorios):
+            valor = self.numeros_aleatorios[self.indice_aleatorio]
+            self.indice_aleatorio += 1
+            return valor
+        else:
+            return random.random()
+    
     def gerar_tempo_chegada(self, fila: Fila) -> float:
         """Gera tempo entre chegadas"""
-        self.contador_aleatorios += 1
-        return random.uniform(fila.tempo_chegada_min, fila.tempo_chegada_max)
+        r = self.obter_aleatorio()
+        return fila.min_chegada + r * (fila.max_chegada - fila.min_chegada)
     
-    def gerar_tempo_atendimento(self, fila: Fila) -> float:
-        """Gera tempo de atendimento"""
-        self.contador_aleatorios += 1
-        return random.uniform(fila.tempo_atendimento_min, fila.tempo_atendimento_max)
+    def gerar_tempo_servico(self, fila: Fila) -> float:
+        """Gera tempo de serviço"""
+        r = self.obter_aleatorio()
+        return fila.min_servico + r * (fila.max_servico - fila.min_servico)
     
-    def processar_chegada_externa(self, id_fila: int, tempo_evento: float):
-        """Processa chegada de cliente externo ao sistema"""
-        fila = self.filas[id_fila]
+    def determinar_destino(self, fila: Fila) -> Optional[str]:
+        """Determina próximo destino baseado nas probabilidades"""
+        if not fila.destinos:
+            return None
+        
+        r = self.obter_aleatorio()
+        prob_acumulada = 0.0
+        
+        for destino, probabilidade in fila.destinos.items():
+            prob_acumulada += probabilidade
+            if r < prob_acumulada:
+                return destino
+        
+        return None
+    
+    def processar_chegada_externa(self, nome_fila: str, tempo_evento: float):
+        """Processa chegada externa ao sistema"""
+        fila = self.filas[nome_fila]
         fila.atualizar_tempo_estado(tempo_evento)
         self.tempo_atual = tempo_evento
+        
+        fila.clientes_recebidos += 1
         
         if fila.tem_espaco():
             fila.clientes_no_sistema += 1
             
-            # Se há servidor livre, inicia atendimento
             if fila.tem_servidor_livre():
-                tempo_atendimento = self.gerar_tempo_atendimento(fila)
-                tempo_fim = self.tempo_atual + tempo_atendimento
-                heapq.heappush(self.eventos, (tempo_fim, 'saida', id_fila))
+                tempo_servico = self.gerar_tempo_servico(fila)
+                tempo_fim = self.tempo_atual + tempo_servico
+                heapq.heappush(self.eventos, (tempo_fim, 'saida', nome_fila))
                 fila.servidores_ocupados.append(tempo_fim)
         else:
             fila.clientes_perdidos += 1
         
-        # Agenda próxima chegada externa (se configurada)
-        if fila.tempo_chegada_min is not None and self.contador_aleatorios < 100000:
+        # Agenda próxima chegada se configurada
+        if fila.min_chegada is not None and self.contador_aleatorios < 100000:
             tempo_entre_chegadas = self.gerar_tempo_chegada(fila)
             proxima_chegada = self.tempo_atual + tempo_entre_chegadas
-            heapq.heappush(self.eventos, (proxima_chegada, 'chegada_externa', id_fila))
+            heapq.heappush(self.eventos, (proxima_chegada, 'chegada_externa', nome_fila))
     
-    def processar_saida(self, id_fila: int, tempo_evento: float):
-        """Processa saída de cliente de uma fila"""
-        fila = self.filas[id_fila]
+    def processar_chegada_interna(self, nome_fila: str, tempo_evento: float):
+        """Processa chegada vinda de outra fila"""
+        fila = self.filas[nome_fila]
+        fila.atualizar_tempo_estado(tempo_evento)
+        
+        fila.clientes_recebidos += 1
+        
+        if fila.tem_espaco():
+            fila.clientes_no_sistema += 1
+            
+            if fila.tem_servidor_livre():
+                tempo_servico = self.gerar_tempo_servico(fila)
+                tempo_fim = self.tempo_atual + tempo_servico
+                heapq.heappush(self.eventos, (tempo_fim, 'saida', nome_fila))
+                fila.servidores_ocupados.append(tempo_fim)
+        else:
+            fila.clientes_perdidos += 1
+    
+    def processar_saida(self, nome_fila: str, tempo_evento: float):
+        """Processa saída de uma fila"""
+        fila = self.filas[nome_fila]
         fila.atualizar_tempo_estado(tempo_evento)
         self.tempo_atual = tempo_evento
         
-        # Remove servidor que terminou
+        # Remove servidor
         fila.servidores_ocupados.remove(tempo_evento)
         fila.clientes_atendidos += 1
         
-        # Verifica se há clientes esperando na fila
+        # Verifica clientes esperando
         clientes_esperando = fila.clientes_no_sistema - len(fila.servidores_ocupados) - 1
         
         if clientes_esperando > 0:
-            # Inicia atendimento do próximo cliente
-            tempo_atendimento = self.gerar_tempo_atendimento(fila)
-            tempo_fim = self.tempo_atual + tempo_atendimento
-            heapq.heappush(self.eventos, (tempo_fim, 'saida', id_fila))
+            tempo_servico = self.gerar_tempo_servico(fila)
+            tempo_fim = self.tempo_atual + tempo_servico
+            heapq.heappush(self.eventos, (tempo_fim, 'saida', nome_fila))
             fila.servidores_ocupados.append(tempo_fim)
         
-        # Atualiza estado
         fila.clientes_no_sistema -= 1
         
-        # Rotear cliente para próxima fila (se houver)
-        if id_fila in self.roteamento:
-            destinos = self.roteamento[id_fila]
-            # Para tandem simples, sempre vai para a próxima fila
-            for destino_id, probabilidade in destinos.items():
-                # Aqui poderia ter lógica probabilística para redes complexas
-                self.processar_chegada_interna(destino_id, tempo_evento)
+        # Rotear cliente
+        proximo_destino = self.determinar_destino(fila)
+        if proximo_destino and proximo_destino in self.filas:
+            self.processar_chegada_interna(proximo_destino, tempo_evento)
     
-    def processar_chegada_interna(self, id_fila: int, tempo_evento: float):
-        """Processa chegada de cliente vindo de outra fila"""
-        fila = self.filas[id_fila]
-        fila.atualizar_tempo_estado(tempo_evento)
+    def executar_simulacao(self, limite_aleatorios: int = 100000):
+        """Executa simulação"""
+        # Inicializar chegadas baseado no arquivo
+        for nome_fila, tempo_inicial in self.chegadas_iniciais.items():
+            if nome_fila in self.filas:
+                heapq.heappush(self.eventos, (tempo_inicial, 'chegada_externa', nome_fila))
         
-        if fila.tem_espaco():
-            fila.clientes_no_sistema += 1
-            
-            # Se há servidor livre, inicia atendimento
-            if fila.tem_servidor_livre():
-                tempo_atendimento = self.gerar_tempo_atendimento(fila)
-                tempo_fim = self.tempo_atual + tempo_atendimento
-                heapq.heappush(self.eventos, (tempo_fim, 'saida', id_fila))
-                fila.servidores_ocupados.append(tempo_fim)
-        else:
-            fila.clientes_perdidos += 1
-    
-    def executar_simulacao(self, tempo_primeira_chegada: float = 1.5, limite_aleatorios: int = 100000):
-        """Executa a simulação completa"""
-        # Inicializa primeira chegada na fila 1 (entrada do sistema)
-        heapq.heappush(self.eventos, (tempo_primeira_chegada, 'chegada_externa', 1))
+        # Se não houver chegadas específicas, usar filas com minArrival
+        if not self.chegadas_iniciais:
+            for nome, fila in self.filas.items():
+                if fila.min_chegada is not None:
+                    heapq.heappush(self.eventos, (1.5, 'chegada_externa', nome))
         
-        # Processa eventos
+        # Processar eventos
         while self.eventos and self.contador_aleatorios <= limite_aleatorios:
-            tempo_evento, tipo_evento, id_fila = heapq.heappop(self.eventos)
+            tempo_evento, tipo_evento, nome_fila = heapq.heappop(self.eventos)
             
             if tipo_evento == 'chegada_externa':
-                self.processar_chegada_externa(id_fila, tempo_evento)
+                self.processar_chegada_externa(nome_fila, tempo_evento)
             elif tipo_evento == 'saida':
-                self.processar_saida(id_fila, tempo_evento)
+                self.processar_saida(nome_fila, tempo_evento)
         
-        # Atualiza tempo final para todas as filas
+        # Atualizar tempo final
         for fila in self.filas.values():
             fila.atualizar_tempo_estado(self.tempo_atual)
     
-    def calcular_distribuicao_probabilidades(self, fila: Fila) -> Dict[int, float]:
-        """Calcula distribuição de probabilidades para uma fila"""
+    def calcular_distribuicao(self, fila: Fila) -> Dict[int, float]:
+        """Calcula distribuição de probabilidades"""
         tempo_total = sum(fila.tempo_por_estado.values())
         if tempo_total == 0:
-            return {i: 0.0 for i in range(fila.capacidade + 1)}
+            return {}
         
         distribuicao = {}
-        for estado in range(fila.capacidade + 1):
+        max_estado = int(max(fila.tempo_por_estado.keys())) if fila.tempo_por_estado else 0
+        
+        for estado in range(max_estado + 1):
             distribuicao[estado] = fila.tempo_por_estado.get(estado, 0.0) / tempo_total
+        
         return distribuicao
     
     def gerar_relatorio(self) -> str:
-        """Gera relatório completo da simulação"""
+        """Gera relatório completo"""
         relatorio = []
-        relatorio.append("=" * 70)
-        relatorio.append("SIMULADOR DE FILAS EM TANDEM")
-        relatorio.append("=" * 70)
+        relatorio.append("=" * 80)
+        relatorio.append("SIMULADOR DE REDES DE FILAS - FORMATO YAML")
+        relatorio.append("=" * 80)
         relatorio.append(f"Tempo global de simulacao: {self.tempo_atual:.2f}")
         relatorio.append(f"Numeros aleatorios utilizados: {self.contador_aleatorios}")
+        if self.usar_lista_aleatorios:
+            relatorio.append(f"Usando lista de aleatorios fornecida ({len(self.numeros_aleatorios)} numeros)")
         relatorio.append("")
         
-        # Relatório de cada fila
-        for id_fila in sorted(self.filas.keys()):
-            fila = self.filas[id_fila]
-            distribuicao = self.calcular_distribuicao_probabilidades(fila)
+        # Ordenar filas por nome
+        nomes_ordenados = sorted(self.filas.keys())
+        
+        for nome_fila in nomes_ordenados:
+            fila = self.filas[nome_fila]
+            distribuicao = self.calcular_distribuicao(fila)
             
-            relatorio.append("=" * 70)
-            relatorio.append(f"FILA {id_fila}")
-            relatorio.append("-" * 70)
+            relatorio.append("=" * 80)
+            relatorio.append(f"FILA: {nome_fila}")
+            relatorio.append("-" * 80)
             
             # Configuração
             relatorio.append("Configuracao:")
-            if fila.tempo_chegada_min is not None:
-                relatorio.append(f"  - Chegadas externas: [{fila.tempo_chegada_min}, {fila.tempo_chegada_max}]")
-            else:
-                relatorio.append(f"  - Chegadas externas: Nao (recebe de outras filas)")
-            relatorio.append(f"  - Tempo atendimento: [{fila.tempo_atendimento_min}, {fila.tempo_atendimento_max}]")
             relatorio.append(f"  - Servidores: {fila.num_servidores}")
-            relatorio.append(f"  - Capacidade: {fila.capacidade}")
+            if fila.capacidade == float('inf'):
+                relatorio.append(f"  - Capacidade: Infinita")
+            else:
+                relatorio.append(f"  - Capacidade: {int(fila.capacidade)}")
+            
+            if fila.min_chegada is not None:
+                relatorio.append(f"  - Tempo entre chegadas: [{fila.min_chegada}, {fila.max_chegada}]")
+            relatorio.append(f"  - Tempo de servico: [{fila.min_servico}, {fila.max_servico}]")
+            
+            # Roteamento
+            if fila.destinos:
+                relatorio.append("  - Roteamento:")
+                for destino, prob in fila.destinos.items():
+                    relatorio.append(f"      -> {destino}: {prob*100:.1f}%")
             relatorio.append("")
             
             # Resultados
             relatorio.append("Resultados:")
+            relatorio.append(f"  - Clientes recebidos: {fila.clientes_recebidos}")
             relatorio.append(f"  - Clientes atendidos: {fila.clientes_atendidos}")
             relatorio.append(f"  - Clientes perdidos: {fila.clientes_perdidos}")
-            total = fila.clientes_atendidos + fila.clientes_perdidos
-            if total > 0:
-                taxa_perda = fila.clientes_perdidos / total
+            
+            if fila.clientes_recebidos > 0:
+                taxa_perda = fila.clientes_perdidos / fila.clientes_recebidos
                 relatorio.append(f"  - Taxa de perda: {taxa_perda:.4f} ({taxa_perda*100:.2f}%)")
             relatorio.append("")
             
-            # Distribuição de probabilidades
-            relatorio.append("Distribuicao de Probabilidades:")
-            relatorio.append(f"{'Estado':<10} {'Tempo Acum.':<15} {'Probabilidade':<15}")
-            relatorio.append("-" * 45)
+            # Distribuição
+            if distribuicao:
+                relatorio.append("Distribuicao de Probabilidades dos Estados:")
+                relatorio.append(f"{'Estado':<10} {'Tempo Acum.':<20} {'Probabilidade':<15}")
+                relatorio.append("-" * 55)
+                
+                for estado in sorted(distribuicao.keys()):
+                    tempo = fila.tempo_por_estado.get(estado, 0.0)
+                    prob = distribuicao[estado]
+                    relatorio.append(f"{estado:<10} {tempo:<20.2f} {prob:<15.4f}")
+                
+                # Métricas
+                L = sum(estado * prob for estado, prob in distribuicao.items())
+                relatorio.append("")
+                relatorio.append(f"  L (numero medio no sistema): {L:.4f}")
+                
+                if 0 in distribuicao:
+                    taxa_ocupacao = 1 - distribuicao[0]
+                else:
+                    taxa_ocupacao = 1.0
+                relatorio.append(f"  Taxa de ocupacao: {taxa_ocupacao:.4f}")
             
-            for estado in range(fila.capacidade + 1):
-                tempo = fila.tempo_por_estado.get(estado, 0.0)
-                prob = distribuicao[estado]
-                relatorio.append(f"{estado:<10} {tempo:<15.2f} {prob:<15.4f}")
-            
-            # Métricas
-            L = sum(estado * prob for estado, prob in distribuicao.items())
-            relatorio.append("")
-            relatorio.append(f"  L (numero medio no sistema): {L:.4f}")
-            
-            if distribuicao[0] > 0:
-                taxa_ocupacao = 1 - distribuicao[0]
-            else:
-                taxa_ocupacao = 1.0
-            relatorio.append(f"  Taxa de ocupacao: {taxa_ocupacao:.4f}")
             relatorio.append("")
         
-        # Roteamento configurado
-        relatorio.append("=" * 70)
-        relatorio.append("CONFIGURACAO DE ROTEAMENTO:")
-        for origem, destinos in self.roteamento.items():
-            for destino, prob in destinos.items():
-                relatorio.append(f"  Fila {origem} -> Fila {destino}: {prob*100:.0f}%")
-        
-        relatorio.append("=" * 70)
+        relatorio.append("=" * 80)
         
         return "\n".join(relatorio)
 
 
+def criar_yaml_tandem():
+    """Cria arquivo YAML para o exemplo de filas em tandem da etapa 2"""
+    yaml_content = """#==============================================================================
+#  SIMULACAO DE FILAS EM TANDEM - ETAPA 2
+#==============================================================================
+#
+#  Configuracao para duas filas em serie (tandem)
+#  Fila 1: G/G/2/3 com chegadas externas
+#  Fila 2: G/G/1/5 recebe todos os clientes da Fila 1
+#
+!PARAMETERS
+
+arrivals:
+  Fila1: 1.5
+
+queues:
+  Fila1:
+    servers: 2
+    capacity: 3
+    minArrival: 1.0
+    maxArrival: 4.0
+    minService: 3.0
+    maxService: 4.0
+  Fila2:
+    servers: 1
+    capacity: 5
+    minService: 2.0
+    maxService: 3.0
+
+network:
+  - source: Fila1
+    target: Fila2
+    probability: 1.0
+
+rndnumbersPerSeed: 100000
+seeds:
+  - 42
+"""
+    
+    with open('config_tandem.yml', 'w', encoding='utf-8') as f:
+        f.write(yaml_content)
+    
+    return 'config_tandem.yml'
+
+
 def main():
-    """Função principal - Executa a simulação solicitada"""
+    """Função principal"""
+    import sys
     
-    print("SIMULADOR DE FILAS EM TANDEM - ETAPA 2")
-    print("=" * 70)
+    print("=" * 80)
+    print("SIMULADOR DE FILAS - FORMATO YAML ESTRUTURADO")
+    print("=" * 80)
     print()
     
-    # Criar simulador
-    sim = SimuladorFilasTandem(seed=42)
+    # Verificar se foi passado arquivo como argumento
+    if len(sys.argv) > 1:
+        arquivo_yaml = sys.argv[1]
+        print(f"Usando arquivo: {arquivo_yaml}")
+    else:
+        # Criar arquivo de exemplo
+        print("Criando arquivo de exemplo para filas em tandem...")
+        arquivo_yaml = criar_yaml_tandem()
+        print(f"Arquivo criado: {arquivo_yaml}")
     
-    # Configurar Fila 1: G/G/2/3, chegadas 1..4, atendimento 3..4
-    fila1 = Fila(
-        id_fila=1,
-        num_servidores=2,
-        capacidade=3,
-        tempo_chegada_min=1,
-        tempo_chegada_max=4,
-        tempo_atendimento_min=3,
-        tempo_atendimento_max=4
-    )
-    
-    # Configurar Fila 2: G/G/1/5, sem chegadas externas, atendimento 2..3
-    fila2 = Fila(
-        id_fila=2,
-        num_servidores=1,
-        capacidade=5,
-        tempo_chegada_min=None,  # Sem chegadas externas
-        tempo_chegada_max=None,
-        tempo_atendimento_min=2,
-        tempo_atendimento_max=3
-    )
-    
-    # Adicionar filas ao simulador
-    sim.adicionar_fila(fila1)
-    sim.adicionar_fila(fila2)
-    
-    # Definir roteamento: Fila 1 -> Fila 2 (100%)
-    sim.definir_roteamento(origem=1, destino=2, probabilidade=1.0)
-    
-    # Executar simulação
+    print()
     print("Executando simulacao...")
-    print("  - Primeiro cliente chega em t=1.5")
-    print("  - Limite: 100.000 numeros aleatorios")
     print()
     
-    sim.executar_simulacao(tempo_primeira_chegada=1.5, limite_aleatorios=100000)
-    
-    # Gerar e exibir relatório
-    relatorio = sim.gerar_relatorio()
-    print(relatorio)
-    
-    # Salvar em arquivo
-    with open("resultados_tandem.txt", "w", encoding="utf-8") as f:
-        f.write(relatorio)
-    
-    print("\n" + "=" * 70)
-    print("Resultados salvos em 'resultados_tandem.txt'")
-    
-    # Instruções de uso
-    print("\n" + "=" * 70)
-    print("INSTRUCOES DE USO:")
-    print("-" * 70)
-    print("1. Para executar a simulacao padrao:")
-    print("   python simulador_tandem.py")
-    print()
-    print("2. Para configurar suas proprias filas:")
-    print("   - Crie objetos Fila com os parametros desejados")
-    print("   - Adicione as filas ao simulador")
-    print("   - Defina o roteamento entre elas")
-    print("   - Execute a simulacao")
-    print()
-    print("3. Estrutura para redes genericas:")
-    print("   - Use definir_roteamento() com probabilidades")
-    print("   - Suporta multiplos destinos por fila")
-    print("   - Facil extensao para topologias complexas")
-    print("=" * 70)
+    try:
+        # Criar e executar simulador
+        sim = SimuladorFilas(arquivo_yaml)
+        sim.executar_simulacao(limite_aleatorios=100000)
+        
+        # Gerar relatório
+        relatorio = sim.gerar_relatorio()
+        print(relatorio)
+        
+        # Salvar relatório
+        nome_saida = arquivo_yaml.replace('.yml', '_resultados.txt')
+        with open(nome_saida, 'w', encoding='utf-8') as f:
+            f.write(relatorio)
+        
+        print(f"\nResultados salvos em '{nome_saida}'")
+        
+    except Exception as e:
+        print(f"Erro ao executar simulacao: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 if __name__ == "__main__":
