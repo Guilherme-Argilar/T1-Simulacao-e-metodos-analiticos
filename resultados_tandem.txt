@@ -1,0 +1,62 @@
+======================================================================
+SIMULADOR DE FILAS EM TANDEM
+======================================================================
+Tempo global de simulacao: 83852.88
+Numeros aleatorios utilizados: 100001
+
+======================================================================
+FILA 1
+----------------------------------------------------------------------
+Configuracao:
+  - Chegadas externas: [1, 4]
+  - Tempo atendimento: [3, 4]
+  - Servidores: 2
+  - Capacidade: 3
+
+Resultados:
+  - Clientes atendidos: 33499
+  - Clientes perdidos: 73
+  - Taxa de perda: 0.0022 (0.22%)
+
+Distribuicao de Probabilidades:
+Estado     Tempo Acum.     Probabilidade  
+---------------------------------------------
+0          1680.88         0.0200         
+1          47113.69        0.5619         
+2          32244.44        0.3845         
+3          2813.87         0.0336         
+
+  L (numero medio no sistema): 1.4316
+  Taxa de ocupacao: 0.9800
+
+======================================================================
+FILA 2
+----------------------------------------------------------------------
+Configuracao:
+  - Chegadas externas: Nao (recebe de outras filas)
+  - Tempo atendimento: [2, 3]
+  - Servidores: 1
+  - Capacidade: 5
+
+Resultados:
+  - Clientes atendidos: 32926
+  - Clientes perdidos: 570
+  - Taxa de perda: 0.0170 (1.70%)
+
+Distribuicao de Probabilidades:
+Estado     Tempo Acum.     Probabilidade  
+---------------------------------------------
+0          1478.59         0.0176         
+1          15203.18        0.1813         
+2          21523.95        0.2567         
+3          21122.47        0.2519         
+4          18750.85        0.2236         
+5          5773.85         0.0689         
+
+  L (numero medio no sistema): 2.6891
+  Taxa de ocupacao: 0.9824
+
+======================================================================
+CONFIGURACAO DE ROTEAMENTO:
+  Fila 1 -> Fila 2: 100%
+======================================================================
