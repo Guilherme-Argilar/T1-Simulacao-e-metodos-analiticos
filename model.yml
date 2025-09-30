@@ -55,7 +55,7 @@ network:
 -  source: Q1
    target: Q2
    probability: 0.78
--  source: Q1
+-  sDource: Q1
    target: Q3
    probability: 0.12
 -  source: Q2
