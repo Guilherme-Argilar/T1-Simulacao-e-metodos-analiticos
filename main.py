@@ -20,7 +20,6 @@ class TipoEvento(Enum):
 
 @dataclass(order=True)
 class Evento:
-    """Classe Evento conforme sugerido no material"""
     tempo: float
     tipo: TipoEvento = field(compare=False)
     fila_origem: str = field(compare=False)
@@ -31,7 +30,6 @@ class Evento:
 
 
 class Fila:
-    """Classe Fila com propriedades e métodos sugeridos"""
     
     def __init__(self, nome: str, servidores: int, capacidade: Optional[int],
                  min_chegada: Optional[float], max_chegada: Optional[float],
@@ -58,75 +56,60 @@ class Fila:
         self.destinos = {}
     
     def get_status(self) -> int:
-        """(Int) Status(): retorna o valor de Customers"""
         return self.clientes_no_sistema
     
     def get_capacity(self) -> float:
-        """(Int) Capacity(): retorna o valor de capacidade da fila"""
         return self.capacidade
     
     def get_servers(self) -> int:
-        """(Int) Servers(): retorna o valor de quantos servidores a fila possui"""
         return self.num_servidores
     
 
     def increment_loss(self):
-        """(Int) Loss(): incrementa a propriedade Loss em uma unidade"""
         self.clientes_perdidos += 1
     
     def add_customer(self):
-        """(void) In(): incrementa Customers em uma unidade"""
         self.clientes_no_sistema += 1
         self.clientes_recebidos += 1
     
     def remove_customer(self):
-        """(void) Out(): decrementa Customers em uma unidade"""
         if self.clientes_no_sistema > 0:
             self.clientes_no_sistema -= 1
             self.clientes_atendidos += 1
     
     def tem_espaco(self) -> bool:
-        """Verifica se há espaço na fila"""
         return self.clientes_no_sistema < self.capacidade
     
     def tem_servidor_livre(self) -> bool:
-        """Verifica se há servidor disponível"""
         return len(self.servidores_ocupados) < self.num_servidores
     
     def atualizar_tempo_estado(self, tempo_atual: float):
-        """Acumula tempo no estado atual"""
         tempo_decorrido = tempo_atual - self.ultimo_tempo_atualizacao
         self.tempo_por_estado[self.clientes_no_sistema] += tempo_decorrido
         self.ultimo_tempo_atualizacao = tempo_atual
 
 
 class Escalonador:
-    """Classe Escalonador para gerenciar eventos (como PriorityQueue do Java)"""
     
     def __init__(self):
         self.eventos = []
     
     def adicionar_evento(self, evento: Evento):
-        """Adiciona evento no escalonador"""
         heapq.heappush(self.eventos, evento)
     
     def proximo_evento(self) -> Optional[Evento]:
-        """Recupera próximo evento"""
         if self.eventos:
             return heapq.heappop(self.eventos)
         return None
     
     def tem_eventos(self) -> bool:
-        """Verifica se há eventos pendentes"""
         return len(self.eventos) > 0
     
     def limpar(self):
-        """Limpa todos os eventos"""
         self.eventos.clear()
 
 
 class SimuladorFilasTandem:
-    """Simulador principal para filas em tandem"""
     
     def __init__(self, arquivo_yaml: str = None):
         self.filas: Dict[str, Fila] = {}
@@ -143,7 +126,6 @@ class SimuladorFilasTandem:
             self.carregar_configuracao(arquivo_yaml)
     
     def carregar_configuracao(self, arquivo: str):
-        """Carrega configuração do arquivo YAML"""
         with open(arquivo, 'r', encoding='utf-8') as f:
             conteudo = f.read()
             inicio_params = conteudo.find('!PARAMETERS')
@@ -183,22 +165,18 @@ class SimuladorFilasTandem:
             random.seed(self.seed)
     
     def gerar_aleatorio(self) -> float:
-        """Gera número aleatório e incrementa contador"""
         self.contador_aleatorios += 1
         return random.random()
     
     def gerar_tempo_chegada(self, fila: Fila) -> float:
-        """Gera tempo entre chegadas"""
         r = self.gerar_aleatorio()
         return fila.min_chegada + r * (fila.max_chegada - fila.min_chegada)
     
     def gerar_tempo_servico(self, fila: Fila) -> float:
-        """Gera tempo de serviço"""
         r = self.gerar_aleatorio()
         return fila.min_servico + r * (fila.max_servico - fila.min_servico)
     
     def determinar_destino(self, fila: Fila) -> Optional[str]:
-        """Determina próximo destino baseado nas probabilidades"""
         if not fila.destinos:
             return None
         
@@ -213,7 +191,6 @@ class SimuladorFilasTandem:
         return None
     
     def processar_chegada(self, evento: Evento):
-        """Processa evento CHEGADA (externa)"""
         fila = self.filas[evento.fila_origem]
         
         self.acumula_tempo(evento.tempo)
@@ -245,7 +222,6 @@ class SimuladorFilasTandem:
             self.escalonador.adicionar_evento(proxima_chegada)
     
     def processar_saida(self, evento: Evento):
-        """Processa evento SAIDA"""
         fila = self.filas[evento.fila_origem]
         
         self.acumula_tempo(evento.tempo)
@@ -279,7 +255,6 @@ class SimuladorFilasTandem:
             self.escalonador.adicionar_evento(evento_passagem)
     
     def processar_passagem(self, evento: Evento):
-        """Processa evento PASSAGEM entre filas"""
         fila_destino = self.filas[evento.fila_destino]
         
         if fila_destino.tem_espaco():
@@ -300,13 +275,11 @@ class SimuladorFilasTandem:
             fila_destino.increment_loss()
     
     def acumula_tempo(self, tempo_evento: float):
-        """Acumula tempo em TODAS as filas (importante!)"""
         for fila in self.filas.values():
             fila.atualizar_tempo_estado(tempo_evento)
         self.tempo_atual = tempo_evento
     
     def executar_simulacao(self):
-        """Executa simulação principal (similar ao main() do professor)"""
         
         for nome_fila, tempo_inicial in self.chegadas_iniciais.items():
             if nome_fila in self.filas:
@@ -331,7 +304,6 @@ class SimuladorFilasTandem:
             fila.atualizar_tempo_estado(self.tempo_atual)
     
     def gerar_relatorio(self) -> str:
-        """Gera relatório para AMBAS as filas"""
         relatorio = []
         relatorio.append("=" * 80)
         relatorio.append("SIMULADOR DE FILAS EM TANDEM")
@@ -382,7 +354,6 @@ class SimuladorFilasTandem:
 
 
 def main():
-    """Função principal"""
     import sys
     
     if len(sys.argv) > 1:
