@@ -299,7 +299,6 @@ class Simulator:
                 L = sum(st * (t / total) for st, t in q.time_by_state.items())
                 lines.append("")
                 lines.append(f"Losses: {q.lost}")
-                lines.append(f"L (mean in system): {L:.6f}")
             else:
                 lines.append("No accumulated time.")
 
