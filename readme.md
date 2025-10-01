@@ -53,5 +53,3 @@ pip install -r requirements.txt
 
 # Execute a simulação
 python main.py model.yml
-```
-```
