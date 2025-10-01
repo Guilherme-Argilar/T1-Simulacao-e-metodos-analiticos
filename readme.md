@@ -10,8 +10,8 @@ Simulador de rede de filas com topologia arbitrária, configurado via arquivo `.
 
 ## Instalação das dependências
 
-```bash
 pip install -r requirements.txt
+
 ```
 
 **Conteúdo do `requirements.txt`:**
